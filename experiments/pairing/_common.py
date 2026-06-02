@@ -249,3 +249,40 @@ def load_scope_heads(dataset, head_pct, scope, head_set, results_dir=None):
         ms = pickle.load(f)
     entry = select_scope(ms, scope)
     return entry[head_set], entry[f'{head_set}_rand'], ms
+
+
+@torch.no_grad()
+def patch_all_layers_batched(model, zs_prompt, tv_by_layer, answer, layers=None):
+    """Patch the TV at every layer in ONE batched forward pass; return per-layer correct.
+
+    tv_by_layer: dict layer -> np.ndarray (d_model,). Builds a batch with one row
+    per layer, patches row b's resid_post at layer b with tv_by_layer[b], runs once,
+    and returns {layer: correct(0/1)}. ~N_layers x faster than calling
+    patch_and_score per layer (one forward pass instead of N).
+    """
+    device = next(model.parameters()).device
+    layers = layers if layers is not None else sorted(tv_by_layer.keys())
+    n = len(layers)
+    toks = model.to_tokens(zs_prompt, prepend_bos=True)
+    batch = toks.expand(n, -1).clone()
+
+    # one hook per layer that patches only its own batch row
+    thetas = {L: torch.tensor(tv_by_layer[L], device=device, dtype=model.cfg.dtype)
+              for L in layers}
+    row_of = {L: bi for bi, L in enumerate(layers)}
+    fwd_hooks = []
+    # group hooks by layer name; each layer patches its corresponding row
+    for L in layers:
+        def hook(value, hook, _L=L):
+            value[row_of[_L], -1, :] = thetas[_L]
+            return value
+        fwd_hooks.append((f'blocks.{L}.hook_resid_post', hook))
+
+    logits = model.run_with_hooks(batch, fwd_hooks=fwd_hooks)[:, -1, :]  # (n, vocab)
+
+    target_toks = model.to_tokens(' ' + str(answer).strip(), prepend_bos=False)[0]
+    space_id = model.to_tokens(' ', prepend_bos=False)[0, 0].item()
+    target = next((t.item() for t in target_toks if t.item() != space_id),
+                  target_toks[0].item())
+    preds = logits.argmax(dim=-1)  # (n,)
+    return {L: int(preds[row_of[L]].item() == target) for L in layers}

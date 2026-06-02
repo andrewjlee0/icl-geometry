@@ -60,8 +60,8 @@ def main():
                 tv_store[key] = np.stack([tv[L] for L in range(n_layers)])
                 tv_meta.append({'key': key, 'task': t, 'cond': cond, 'prompt_idx': i,
                                 'query_input': zs_in, 'answer': zs_out})
-            peak = max(C.patch_and_score(model, zs_prompt, tv[L], L, zs_out)[0]
-                       for L in range(n_layers))
+            per_layer = C.patch_all_layers_batched(model, zs_prompt, tv, zs_out)
+            peak = max(per_layer.values())
             rec.append({'task': t, 'cond': cond, 'peak': peak})
             torch.cuda.empty_cache()
 
