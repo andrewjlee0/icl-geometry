@@ -252,37 +252,55 @@ def load_scope_heads(dataset, head_pct, scope, head_set, results_dir=None):
 
 
 @torch.no_grad()
-def patch_all_layers_batched(model, zs_prompt, tv_by_layer, answer, layers=None):
-    """Patch the TV at every layer in ONE batched forward pass; return per-layer correct.
+def patch_all_layers_batched(model, zs_prompt, tv_by_layer, answer, layers=None,
+                             max_new_tokens=20):
+    """Patch the TV at every layer (batched) and MULTI-TOKEN greedy-decode each row.
 
-    tv_by_layer: dict layer -> np.ndarray (d_model,). Builds a batch with one row
-    per layer, patches row b's resid_post at layer b with tv_by_layer[b], runs once,
-    and returns {layer: correct(0/1)}. ~N_layers x faster than calling
-    patch_and_score per layer (one forward pass instead of N).
+    Row b has the TV injected into resid_post at layer b, at the original FINAL
+    position of the zero-shot prompt. The injection is re-applied at that FIXED
+    position every forward pass (not at the moving last index), so generated tokens
+    flow through patched context without being overwritten. Greedy-decodes up to
+    max_new_tokens; a layer is correct iff the decoded generation == answer
+    (whitespace-stripped exact match -- a newline difference counts as wrong). Each
+    row stops as soon as it is fully correct or diverges. Returns {layer: 0/1}.
     """
     device = next(model.parameters()).device
     layers = layers if layers is not None else sorted(tv_by_layer.keys())
     n = len(layers)
-    toks = model.to_tokens(zs_prompt, prepend_bos=True)
-    batch = toks.expand(n, -1).clone()
+    target = str(answer).strip()
 
-    # one hook per layer that patches only its own batch row
     thetas = {L: torch.tensor(tv_by_layer[L], device=device, dtype=model.cfg.dtype)
               for L in layers}
     row_of = {L: bi for bi, L in enumerate(layers)}
-    fwd_hooks = []
-    # group hooks by layer name; each layer patches its corresponding row
-    for L in layers:
-        def hook(value, hook, _L=L):
-            value[row_of[_L], -1, :] = thetas[_L]
-            return value
-        fwd_hooks.append((f'blocks.{L}.hook_resid_post', hook))
 
-    logits = model.run_with_hooks(batch, fwd_hooks=fwd_hooks)[:, -1, :]  # (n, vocab)
+    base = model.to_tokens(zs_prompt, prepend_bos=True)
+    inject_pos = base.shape[1] - 1
 
-    target_toks = model.to_tokens(' ' + str(answer).strip(), prepend_bos=False)[0]
-    space_id = model.to_tokens(' ', prepend_bos=False)[0, 0].item()
-    target = next((t.item() for t in target_toks if t.item() != space_id),
-                  target_toks[0].item())
-    preds = logits.argmax(dim=-1)  # (n,)
-    return {L: int(preds[row_of[L]].item() == target) for L in layers}
+    def make_hooks():
+        hooks = []
+        for L in layers:
+            def hook(value, hook, _L=L):
+                value[row_of[_L], inject_pos, :] = thetas[_L]
+                return value
+            hooks.append((f'blocks.{L}.hook_resid_post', hook))
+        return hooks
+
+    cur = base.expand(n, -1).clone()
+    gen = [[] for _ in range(n)]
+    done = [False] * n
+    val = [0] * n
+    for _ in range(max_new_tokens):
+        if all(done):
+            break
+        logits = model.run_with_hooks(cur, fwd_hooks=make_hooks())[:, -1, :]
+        nxt = logits.argmax(dim=-1)
+        for bi in range(n):
+            gen[bi].append(int(nxt[bi].item()))
+            if not done[bi]:
+                dec = model.tokenizer.decode(gen[bi]).strip()
+                if dec == target:
+                    val[bi] = 1; done[bi] = True
+                elif len(dec) >= len(target) or (dec and not target.startswith(dec)):
+                    done[bi] = True
+        cur = torch.cat([cur, nxt.unsqueeze(1)], dim=1)
+    return {L: val[row_of[L]] for L in layers}

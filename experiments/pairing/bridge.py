@@ -172,8 +172,7 @@ def main():
         for cond, hooks in conditions:
             icl_ok = check_correct_multitoken(model, tok_icl, ans, hooks=hooks)
             tv = C.extract_tv_all_layers(model, pd_['prompt'], arrow, fwd_hooks=hooks)
-            peak = max(C.patch_and_score(model, zs_prompt, tv[L], L, zs_out)[0]
-                       for L in range(n_layers))
+            peak = max(C.patch_all_layers_batched(model, zs_prompt, tv, zs_out).values())
             amp_rows.append({'task': t, 'group': g, 'cond': cond,
                              'icl': icl_ok, 'patch_peak': peak})
         torch.cuda.empty_cache()
