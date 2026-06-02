@@ -122,16 +122,24 @@ def select_top_pct(scores, pct=10):
     return [(L, h) for L, h, _ in flat[:n_keep]]
 
 
-def matched_random_heads(top_heads, n_layers, n_heads, seed=0):
-    """Random control: same count, same per-layer distribution as top_heads."""
+def matched_random_heads(top_heads, n_layers, n_heads, seed=0, also_exclude=None):
+    """Random control: same count, same per-layer distribution as top_heads.
+
+    `also_exclude` (list of (layer,head)) is removed from the candidate pool too --
+    pass the OTHER population (e.g. aggregation heads when controlling pairing) so
+    the random baseline never accidentally ablates the other functional head set,
+    which would inflate the control's damage and wash out the specific effect.
+    """
     rng = np.random.RandomState(seed)
     by_layer = defaultdict(int)
     for L, _ in top_heads:
         by_layer[L] += 1
     chosen = []
-    top_set = set(top_heads)
+    excluded = set(top_heads)
+    if also_exclude:
+        excluded.update(also_exclude)
     for L, k in by_layer.items():
-        avail = [h for h in range(n_heads) if (L, h) not in top_set]
+        avail = [h for h in range(n_heads) if (L, h) not in excluded]
         rng.shuffle(avail)
         chosen.extend((L, h) for h in avail[:k])
     return chosen
@@ -159,8 +167,10 @@ def get_head_sets(model, prompts_data, pct=10, cache_path=None, recompute=False,
     out = {
         'pairing': pairing,
         'aggregation': aggregation,
-        'pairing_rand': matched_random_heads(pairing, n_layers, n_heads, rand_seed),
-        'aggregation_rand': matched_random_heads(aggregation, n_layers, n_heads, rand_seed + 1),
+        'pairing_rand': matched_random_heads(pairing, n_layers, n_heads, rand_seed,
+                                             also_exclude=aggregation),
+        'aggregation_rand': matched_random_heads(aggregation, n_layers, n_heads, rand_seed + 1,
+                                                 also_exclude=pairing),
         'pairing_score': pairing_score,
         'aggregation_score': aggregation_score,
         'pct': pct,
