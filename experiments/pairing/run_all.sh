@@ -96,6 +96,15 @@ gpu_worker() {
 }
 
 run_pipeline() {
+    if [ -n "${FRESH:-}" ]; then
+        # Delete ONLY regenerable caches. NEVER touches data/hendel_splits.pkl
+        # (your real data) or results/*.csv/.pkl/.png/.npz (your outputs).
+        echo "[FRESH] clearing regenerable caches (dataset + head sets)..."
+        rm -f "$REPO_ROOT/data/nonce_arithmetic_splits.pkl"
+        rm -f "$REPO_ROOT/configs/nonce_arithmetic_splits.pkl"
+        rm -f "$REPO_ROOT"/results/head_sets_*.pkl
+        echo "[FRESH] kept: data/hendel_splits.pkl and all results/."
+    fi
     prereqs || { echo "prerequisites failed; aborting."; return 1; }
     build_jobs > "$QUEUE_FILE"; : > "$LOCK_FILE"
     local total; total="$(wc -l < "$QUEUE_FILE")"
