@@ -186,12 +186,12 @@ def summarize_and_plot(df, title, tag):
     print('baselines:', {k: round(v, 3) for k, v in base.items()})
     print(piv.round(3).to_string())
 
-    plot_df = (df[df['group'].isin(['head_set', 'random'])]
-               .groupby(['cond', 'group'])['correct'].mean().reset_index())
+    plot_src = df[df['group'].isin(['head_set', 'random'])]
     order = [c for c in df['cond'].unique() if c not in ('unablated', 'full_ablation')]
     fig, ax = plt.subplots(figsize=(max(9, 0.6 * len(order)), 4.8))
-    sns.barplot(data=plot_df, x='cond', y='correct', hue='group',
-                order=order, hue_order=['head_set', 'random'], ax=ax)
+    sns.barplot(data=plot_src, x='cond', y='correct', hue='group',
+                order=order, hue_order=['head_set', 'random'],
+                errorbar=('ci', 95), ax=ax)
     ax.set_ylim(0, 1.05); ax.set_xlabel(''); ax.set_ylabel('accuracy')
     ax.set_title(title)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=40, ha='right', fontsize=7)

@@ -59,9 +59,9 @@ def main():
     print('\n=== per-task accuracy ===')
     print(acc.round(3).to_string())
 
-    plot_df = df.groupby(['cond'])['correct'].mean().reindex(cond_order).reset_index()
     fig, ax = plt.subplots(figsize=(max(8, 0.8 * len(cond_order)), 4.5))
-    sns.barplot(data=plot_df, x='cond', y='correct', order=cond_order, ax=ax)
+    sns.barplot(data=df, x='cond', y='correct', order=cond_order,
+                errorbar=('ci', 95), ax=ax)
     ax.set_ylim(0, 1.05); ax.set_ylabel('ICL accuracy'); ax.set_xlabel('')
     ax.set_title(f'{ds}: ICL accuracy by corruption condition')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=40, ha='right', fontsize=8)

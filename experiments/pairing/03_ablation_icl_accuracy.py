@@ -107,11 +107,10 @@ def main():
     print('\n=== accuracy by condition (mean over tasks/prompts) ===')
     print(acc.round(3).to_string())
 
-    plot_df = df.groupby(['cond', 'variant'])['correct'].mean().reset_index()
     cond_order = [c[0] for c in conds]
     fig, ax = plt.subplots(figsize=(max(9, 0.8 * len(cond_order)), 4.8))
-    sns.barplot(data=plot_df, x='cond', y='correct', hue='variant',
-                order=cond_order, hue_order=order, ax=ax)
+    sns.barplot(data=df, x='cond', y='correct', hue='variant',
+                order=cond_order, hue_order=order, errorbar=('ci', 95), ax=ax)
     ax.set_ylim(0, 1.05); ax.set_xlabel(''); ax.set_ylabel('ICL accuracy')
     ax.set_title(f'{ds}: ablate {args.head_set} ({args.scope})')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=40, ha='right', fontsize=7)

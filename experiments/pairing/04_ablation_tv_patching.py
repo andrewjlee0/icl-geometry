@@ -45,6 +45,7 @@ def run_one_scope(model, splits, task_subset, heads, rand_heads, pools, conds,
     variants = [('intact', []), ('ablated', abl), ('rand_ablated', rabl)]
     rng = random.Random(args.seed)
     rec = []
+    layer_rec = []
     jobs = [(t, i, pd_) for t in task_subset
             for i, pd_ in enumerate(splits[t]['icl_prompts'][:args.n_prompts])]
     for t, i, pd_ in tqdm(jobs, desc=f'{scope_label} TVpatch'):
@@ -68,8 +69,11 @@ def run_one_scope(model, splits, task_subset, heads, rand_heads, pools, conds,
                 peak = max(per_layer.values())
                 rec.append({'scope': scope_label, 'task': t, 'cond': cond,
                             'variant': vname, 'peak': peak})
+                for L, ok in per_layer.items():
+                    layer_rec.append({'scope': scope_label, 'task': t, 'cond': cond,
+                                      'variant': vname, 'layer': L, 'correct': ok})
             torch.cuda.empty_cache()
-    return rec
+    return rec, layer_rec
 
 
 def main():
@@ -88,12 +92,14 @@ def main():
     tv_store = {} if args.save_activations else None
     tv_meta = []
     rec = []
+    layer_rec = []
     if args.scope == 'task':
         for t in tasks:
             entry = select_scope(ms, f'task:{t}')
-            rec += run_one_scope(model, splits, [t], entry[args.head_set],
-                                 entry[f'{args.head_set}_rand'], pools, conds, args,
-                                 f'task:{t}', tv_store, tv_meta)
+            _r, _lr = run_one_scope(model, splits, [t], entry[args.head_set],
+                                    entry[f'{args.head_set}_rand'], pools, conds, args,
+                                    f'task:{t}', tv_store, tv_meta)
+            rec += _r; layer_rec += _lr
     else:
         entry = select_scope(ms, args.scope)
         if args.scope.startswith('task:'):
@@ -103,7 +109,7 @@ def main():
             subset = categorize_tasks(splits)[cat]
         else:
             subset = tasks
-        rec = run_one_scope(model, splits, subset, entry[args.head_set],
+        rec, layer_rec = run_one_scope(model, splits, subset, entry[args.head_set],
                             entry[f'{args.head_set}_rand'], pools, conds, args,
                             args.scope, tv_store, tv_meta)
 
@@ -114,12 +120,11 @@ def main():
     print('\n=== peak TV recovery by condition (mean over tasks/prompts) ===')
     print(summ.round(3).to_string())
 
-    plot_df = df.groupby(['cond', 'variant'])['peak'].mean().reset_index()
     cond_order = [c[0] for c in conds]
     fig, ax = plt.subplots(figsize=(max(9, 0.8 * len(cond_order)), 4.8))
     import seaborn as sns
-    sns.barplot(data=plot_df, x='cond', y='peak', hue='variant',
-                order=cond_order, hue_order=order, ax=ax)
+    sns.barplot(data=df, x='cond', y='peak', hue='variant',
+                order=cond_order, hue_order=order, errorbar=('ci', 95), ax=ax)
     ax.set_ylim(0, 1.05); ax.set_xlabel(''); ax.set_ylabel('peak TV recovery')
     ax.set_title(f'{ds}: TV patch, ablate {args.head_set} ({args.scope})')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=40, ha='right', fontsize=7)
@@ -128,7 +133,18 @@ def main():
     sc = args.scope.replace(':', '-')
     tag = f'04_ablation_tvpatch_{ds}_{args.head_set}_{sc}'
     C.save_fig(fig, tag)
-    payload = {'df': df, 'summary': summ.reset_index(), 'args': vars(args)}
+    ldf = pd.DataFrame(layer_rec)
+    by_layer = (ldf.groupby(['variant', 'layer'])['correct'].mean().unstack('variant')
+                if len(ldf) else pd.DataFrame())
+    if len(ldf):
+        fig2, ax2 = plt.subplots(figsize=(9, 4.8))
+        sns.lineplot(data=ldf, x='layer', y='correct', hue='variant',
+                     hue_order=order, errorbar=('ci', 95), ax=ax2)
+        ax2.set_ylim(0, 1.05); ax2.set_ylabel('TV recovery accuracy'); ax2.set_xlabel('layer')
+        ax2.set_title(f'{ds}: TV recovery by layer, ablate {args.head_set} ({args.scope}) (95% CI)')
+        ax2.legend(title=''); C.save_fig(fig2, f'04_ablation_tvpatch_{ds}_{args.head_set}_{sc}_bylayer')
+    payload = {'df': df, 'summary': summ.reset_index(),
+               'by_layer': by_layer, 'layer_df': ldf, 'args': vars(args)}
     if args.save_activations:
         payload['tv_meta'] = pd.DataFrame(tv_meta)
         C.save_activations(tag, tv_store)

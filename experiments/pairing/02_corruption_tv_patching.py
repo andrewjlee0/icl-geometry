@@ -43,6 +43,7 @@ def main():
             for i, pd_ in enumerate(splits[t]['icl_prompts'][:args.n_prompts])]
 
     rec = []
+    layer_rec = []   # per-layer recovery (task, cond, layer, correct)
     tv_store = {} if args.save_activations else None
     tv_meta = []
     for t, i, pd_ in tqdm(jobs, desc=f'{ds} TV patch'):
@@ -63,6 +64,8 @@ def main():
             per_layer = C.patch_all_layers_batched(model, zs_prompt, tv, zs_out)
             peak = max(per_layer.values())
             rec.append({'task': t, 'cond': cond, 'peak': peak})
+            for L, ok in per_layer.items():
+                layer_rec.append({'task': t, 'cond': cond, 'layer': L, 'correct': ok})
             torch.cuda.empty_cache()
 
     df = pd.DataFrame(rec)
@@ -74,9 +77,9 @@ def main():
     print('\n=== per-task ===')
     print(task_peak.round(3).to_string())
 
-    plot_df = overall.reset_index()
     fig, ax = plt.subplots(figsize=(max(8, 0.8 * len(cond_order)), 4.5))
-    sns.barplot(data=plot_df, x='cond', y='peak', order=cond_order, ax=ax)
+    sns.barplot(data=df, x='cond', y='peak', order=cond_order,
+                errorbar=('ci', 95), ax=ax)
     ax.set_ylim(0, 1.05); ax.set_ylabel('peak TV recovery'); ax.set_xlabel('')
     ax.set_title(f'{ds}: TV recovery by corruption condition')
     ax.set_xticklabels(ax.get_xticklabels(), rotation=40, ha='right', fontsize=8)
@@ -84,7 +87,19 @@ def main():
 
     tag = f'02_corruption_tvpatch_{ds}'
     C.save_fig(fig, tag)
+    by_layer = (pd.DataFrame(layer_rec)
+                  .groupby(['cond', 'layer'])['correct'].mean().unstack('cond'))
+    ldf = pd.DataFrame(layer_rec)
+    # per-layer recovery with 95% CI over tasks
+    fig2, ax2 = plt.subplots(figsize=(9, 4.8))
+    sns.lineplot(data=ldf, x='layer', y='correct', hue='cond',
+                 hue_order=cond_order, errorbar=('ci', 95), ax=ax2)
+    ax2.set_ylim(0, 1.05); ax2.set_ylabel('TV recovery accuracy'); ax2.set_xlabel('layer')
+    ax2.set_title(f'{ds}: TV recovery by layer (95% CI over tasks)')
+    ax2.legend(title='', fontsize=7, ncol=2)
+    C.save_fig(fig2, f'02_corruption_tvpatch_{ds}_bylayer')
     payload = {'df': df, 'overall': overall.reset_index(), 'task_peak': task_peak,
+               'by_layer': by_layer, 'layer_df': pd.DataFrame(layer_rec),
                'args': vars(args)}
     if args.save_activations:
         payload['tv_meta'] = pd.DataFrame(tv_meta)
