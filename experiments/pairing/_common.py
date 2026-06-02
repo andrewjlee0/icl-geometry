@@ -38,11 +38,17 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # model + args
 # --------------------------------------------------------------------------- #
 def load_model(device='cuda', cuda_visible=None):
-    if cuda_visible is not None:
+    # GPU selection is via CUDA_VISIBLE_DEVICES. If the launching shell already set it
+    # (e.g. a per-GPU worker exporting CUDA_VISIBLE_DEVICES=N), DO NOT override it:
+    # re-setting it inside an already-masked process points at a device index that no
+    # longer exists and crashes the first forward pass (load succeeds, then silent
+    # death). Only set it when the caller passed one AND the env is currently unset.
+    if cuda_visible is not None and 'CUDA_VISIBLE_DEVICES' not in os.environ:
         os.environ['CUDA_VISIBLE_DEVICES'] = str(cuda_visible)
     from transformer_lens import HookedTransformer
     from configs import MODEL_NAME
-    model = HookedTransformer.from_pretrained(MODEL_NAME, device=device, dtype=torch.float16)
+    dev = 'cuda' if str(device).startswith('cuda') else device
+    model = HookedTransformer.from_pretrained(MODEL_NAME, device=dev, dtype=torch.float16)
     model.eval()
     return model
 
