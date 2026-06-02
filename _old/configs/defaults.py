@@ -2,16 +2,9 @@
 from pathlib import Path
 
 # Paths
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 HENDEL_REPO = Path("/home/cvllab/Documents/andrew/repos/icl_task_vectors")
 RESULTS_DIR = Path("results")
 RESULTS_DIR.mkdir(exist_ok=True)
-
-# Frozen dataset splits live in data/ (next to the dataset code), not configs/.
-# Single source of truth: change this one line to relocate all splits.
-SPLITS_DIR = _REPO_ROOT / "data"
-HENDEL_SPLITS = SPLITS_DIR / "hendel_splits.pkl"
-NONCE_ARITH_SPLITS = SPLITS_DIR / "nonce_arithmetic_splits.pkl"
 
 # Model
 MODEL_NAME = "meta-llama/Llama-3.2-3B"

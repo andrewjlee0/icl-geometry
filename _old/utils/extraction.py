@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from collections import defaultdict
 from tqdm import tqdm
-from .positions import find_role_positions
+from .prompts import find_role_positions
 
 
 @torch.no_grad()

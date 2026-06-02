@@ -128,31 +128,3 @@ def run_patching_sweep(model, eval_data, task_vectors, n_layers, check_fn=check_
             correct.append(float(check_fn(model, logits, eq['query_output'])))
         accs[layer] = np.mean(correct)
     return accs
-
-
-@torch.no_grad()
-def check_correct_multitoken(model, tokens, expected, max_new_tokens=20, hooks=None):
-    """Greedy-decode and compare to expected (whole-string, no whitespace norm).
-
-    Works for multi-token answers (nonce words, numbers) and single-token answers.
-    Pass fwd_hooks via `hooks` to evaluate under an intervention.
-    """
-    target = expected.strip()
-    generated = []
-    cur = tokens.clone()
-    for _ in range(max_new_tokens):
-        if hooks:
-            logits = model.run_with_hooks(cur, fwd_hooks=hooks)[0, -1]
-        else:
-            logits = model(cur)[0, -1]
-        nt = logits.argmax().item()
-        generated.append(nt)
-        cur = torch.cat([cur, torch.tensor([[nt]], device=cur.device)], dim=1)
-        decoded = model.tokenizer.decode(generated).strip()
-        if decoded == target:
-            return 1
-        if len(decoded) >= len(target):
-            return 0
-        if decoded and not target.startswith(decoded):
-            return 0
-    return int(model.tokenizer.decode(generated).strip() == target)
