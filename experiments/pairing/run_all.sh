@@ -61,7 +61,7 @@ prereqs() {
         if [ ! -f "$REPO_ROOT/data/nonce_arithmetic_splits.pkl" ] && \
            [ ! -f "$REPO_ROOT/configs/nonce_arithmetic_splits.pkl" ]; then
             echo "[stage 0] building nonce+arithmetic dataset..."
-            ( cd "$REPO_ROOT" && CUDA_VISIBLE_DEVICES=0 python data/make_nonce_arithmetic_splits.py \
+            ( cd "$REPO_ROOT" && PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=0 python -u data/make_nonce_arithmetic_splits.py \
                   --cuda 0 > "$LOG_DIR/00_make_nonce_arithmetic.log" 2>&1 ) \
                   || { echo "[stage 0] FAILED"; return 1; }
         else echo "[stage 0] nonce+arithmetic splits exist, skipping."; fi
@@ -72,7 +72,7 @@ prereqs() {
         cache="$REPO_ROOT/results/head_sets_${dsl}_pct10.pkl"
         if [ -f "$cache" ]; then echo "[stage 1] $ds exists, skipping"; continue; fi
         echo "[stage 1] scoring $ds ..."
-        ( cd "$EXP_DIR" && CUDA_VISIBLE_DEVICES=0 python score_heads.py \
+        ( cd "$EXP_DIR" && PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=0 python -u score_heads.py \
               --dataset "$ds" --cuda 0 $NP_FLAG > "$LOG_DIR/01_score_${dsl}.log" 2>&1 ) \
               || { echo "[stage 1] $ds FAILED"; return 1; }
     done
@@ -89,7 +89,7 @@ gpu_worker() {
         [ -z "$job" ] && break
         local tag; tag="$(job_tag "$job")"; local log="$LOG_DIR/${tag}.gpu${gpu}.log"
         echo "[gpu $gpu] START  $job"
-        ( cd "$EXP_DIR" && CUDA_VISIBLE_DEVICES="$gpu" python $job --cuda "$gpu" $NP_FLAG > "$log" 2>&1 )
+        ( cd "$EXP_DIR" && PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES="$gpu" python -u $job --cuda "$gpu" $NP_FLAG > "$log" 2>&1 )
         [ $? -eq 0 ] && echo "[gpu $gpu] DONE   $job" || echo "[gpu $gpu] FAIL  $job ($log)"
     done
     echo "[gpu $gpu] done."
