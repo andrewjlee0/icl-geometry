@@ -1,8 +1,4 @@
 *.npz
-*.png
-*.pdf
-*.jpg
-*.jpeg
 *.pkl
 __pycache__/
 *.pyc
@@ -12,3 +8,12 @@ results/
 old_results/
 _old_results/
 *.tar.gz
+
+# Figures are generated locally, NOT uploaded (notebooks/.ipynb ARE tracked)
+*.png
+*.pdf
+*.jpg
+*.jpeg
+*.svg
+*.gif
+*.html
