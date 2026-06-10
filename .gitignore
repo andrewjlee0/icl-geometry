@@ -4,3 +4,11 @@
 *.jpg
 *.jpeg
 *.pkl
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+results/
+old_results/
+_old_results/
+*.tar.gz
